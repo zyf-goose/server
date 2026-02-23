@@ -77,7 +77,7 @@ bool Acceptor::init(const ReactorConfig& cfg, EventLoop& loop, StopState& stop) 
         return false;
     }
 
-    if (!loop.add_fd(listener.get(), EPOLLIN)) {
+    if (!loop.add_fd(listener.get(), EPOLLIN | EPOLLET)) {
         stop.requested = true;
         stop.reason = "epoll add listener failed";
         stop.err = errno;
@@ -132,7 +132,7 @@ int Acceptor::on_readable(EventLoop& loop,
             return accepted;
         }
 
-        if (!loop.add_fd(client_fd, EPOLLIN | EPOLLRDHUP)) {
+        if (!loop.add_fd(client_fd, EPOLLIN | EPOLLRDHUP | EPOLLET)) {
             const int err = errno;
             ::close(client_fd);
 

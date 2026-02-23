@@ -9,6 +9,12 @@
 
 namespace reactor {
 
+namespace {
+
+constexpr std::uint32_t kClientBaseEvents = EPOLLIN | EPOLLRDHUP | EPOLLET;
+
+}  // namespace
+
 Reactor::Reactor(const ReactorConfig& config)
     : config_(config),
       loop_(config.max_events),
@@ -84,7 +90,7 @@ int Reactor::run_main_loop() noexcept {
                 continue;
             }
 
-            if ((ev & EPOLLIN) == 0U) {
+            if ((ev & (EPOLLIN | EPOLLOUT)) == 0U) {
                 continue;
             }
 
@@ -93,12 +99,41 @@ int Reactor::run_main_loop() noexcept {
                 continue;
             }
 
-            const IoResult io = conn->on_readable();
+            IoResult io{};
+            if ((ev & EPOLLOUT) != 0U) {
+                // Writable handler only contributes write progress; read_bytes remains 0 by contract.
+                const IoResult writable = conn->on_writable();
+                io.read_bytes += writable.read_bytes;
+                io.write_bytes += writable.write_bytes;
+                io.should_close = io.should_close || writable.should_close;
+            }
+
+            if (!io.should_close && (ev & EPOLLIN) != 0U) {
+                // Readable handler may also write (echo path + opportunistic flush), so merge totals.
+                const IoResult readable = conn->on_readable();
+                io.read_bytes += readable.read_bytes;
+                io.write_bytes += readable.write_bytes;
+                io.should_close = io.should_close || readable.should_close;
+            }
+
             stats_.read_bytes += static_cast<std::uint64_t>(io.read_bytes);
             stats_.write_bytes += static_cast<std::uint64_t>(io.write_bytes);
 
             if (io.should_close) {
                 close_connection(fd);
+                continue;
+            }
+
+            const bool want_epollout = conn->has_pending_write();
+            if (want_epollout != conn->is_epollout_registered()) {
+                // Keep kernel registration aligned with pending output bytes.
+                const std::uint32_t events = kClientBaseEvents | (want_epollout ? EPOLLOUT : 0U);
+                if (!loop_.mod_fd(fd, events)) {
+                    request_stop("epoll mod client failed", errno);
+                    break;
+                }
+                // Update cached state only after successful epoll_ctl(MOD).
+                conn->set_epollout_registered(want_epollout);
             }
         }
     }
