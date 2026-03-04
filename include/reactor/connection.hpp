@@ -3,8 +3,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include "reactor/config.hpp"
+#include "utils/event_handler.hpp"
 
 namespace reactor {
 
@@ -18,6 +20,7 @@ class Connection {
 public:
     void attach(int fd) noexcept;
     void reset() noexcept;
+    void set_event_handler(std::unique_ptr<EventHandler> handler);
 
     bool is_active() const noexcept { return active_; }
     int fd() const noexcept { return fd_; }
@@ -39,6 +42,7 @@ private:
     std::array<char, kConnectionBufferSize> write_buffer_{};
     std::size_t write_buffer_begin_ = 0;
     std::size_t write_buffer_size_ = 0;
+    std::unique_ptr<EventHandler> handler_;
 };
 
 }  // namespace reactor

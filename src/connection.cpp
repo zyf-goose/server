@@ -11,6 +11,10 @@
 
 namespace reactor {
 
+void Connection::set_event_handler(std::unique_ptr<EventHandler> handler){
+    handler_ = std::move(handler);
+}
+
 void Connection::attach(int fd) noexcept {
     fd_ = fd;
     active_ = true;
@@ -115,52 +119,29 @@ IoResult Connection::on_readable() noexcept {
                 continue;
             }
             if (is_would_block_errno(err)) {
-                return result;
+                break;
             }
             result.should_close = true;
             return result;
         }
-
         result.read_bytes += static_cast<std::size_t>(bytes_received);
+    }
 
-        std::size_t offset = 0;
-        if (write_buffer_size_ == 0U) {
-            while (offset < static_cast<std::size_t>(bytes_received)) {
-                const ssize_t sent = ::send(fd_,
-                                            read_buffer_.data() + offset,
-                                            static_cast<std::size_t>(bytes_received) - offset,
-                                            MSG_NOSIGNAL);
-                if (sent > 0) {
-                    const std::size_t written = static_cast<std::size_t>(sent);
-                    offset += written;
-                    result.write_bytes += written;
-                    continue;
-                }
+    // assume handler consumes all bytes in read buffer, and write buffer has no wrap around when appending
+    handler_->on_bytes(read_buffer_.data(), result.read_bytes);
+    const size_t offset = write_buffer_begin_ + write_buffer_size_;
+    write_buffer_size_ += handler_->append_output(write_buffer_.begin() + offset, write_buffer_.size() - offset);
 
-                if (sent < 0 && errno == EINTR) {
-                    continue;
-                }
-
-                if (sent < 0 && is_would_block_errno(errno)) {
-                    break;
-                }
-
-                result.should_close = true;
-                return result;
-            }
+    if (write_buffer_size_ > 0) {
+        /*
+        if (!enqueue_write(write_buffer_.data() + write_buffer_begin_, write_buffer_size_)) {
+            result.should_close = true;
+            return result;
         }
-
-        if (offset < static_cast<std::size_t>(bytes_received)) {
-            const std::size_t remaining = static_cast<std::size_t>(bytes_received) - offset;
-            if (!enqueue_write(read_buffer_.data() + offset, remaining)) {
-                result.should_close = true;
-                return result;
-            }
-
-            if (!flush_write(result)) {
-                result.should_close = true;
-                return result;
-            }
+        */
+        if (!flush_write(result)) {
+            result.should_close = true;
+            return result;
         }
     }
 

@@ -15,11 +15,11 @@ constexpr std::uint32_t kClientBaseEvents = EPOLLIN | EPOLLRDHUP | EPOLLET;
 
 }  // namespace
 
-Reactor::Reactor(const ReactorConfig& config)
+Reactor::Reactor(const ReactorConfig& config, HandlerFactory factory)
     : config_(config),
       loop_(config.max_events),
-      connections_(config.max_connections),
-      events_(static_cast<std::size_t>(config.max_events)) {}
+      connections_(config.max_connections, factory),
+      events_(static_cast<std::size_t>(config.max_events)){}
 
 int Reactor::run() noexcept {
     if (!loop_.init()) {

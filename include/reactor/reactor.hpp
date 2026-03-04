@@ -1,6 +1,8 @@
 #pragma once
 
 #include <vector>
+#include <functional>
+#include <memory>
 
 #include "reactor/acceptor.hpp"
 #include "reactor/config.hpp"
@@ -8,11 +10,14 @@
 #include "reactor/event_loop.hpp"
 #include "reactor/types.hpp"
 
+#include "utils/event_handler.hpp"
+
 namespace reactor {
 
 class Reactor {
 public:
-    explicit Reactor(const ReactorConfig& config);
+    using HandlerFactory = std::function<std::unique_ptr<EventHandler>()>;
+    explicit Reactor(const ReactorConfig& config, HandlerFactory factory);
 
     int run() noexcept;
 

@@ -11,6 +11,6 @@ struct ReactorConfig {
     std::size_t max_connections = 1024U * 1024U;
 };
 
-constexpr std::size_t kConnectionBufferSize = 16;
+constexpr std::size_t kConnectionBufferSize = 1024;
 
 }  // namespace reactor

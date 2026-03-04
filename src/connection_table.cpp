@@ -2,7 +2,10 @@
 
 namespace reactor {
 
-ConnectionTable::ConnectionTable(std::size_t max_connections) : slots_(max_connections) {}
+ConnectionTable::ConnectionTable(std::size_t max_connections, HandlerFactory factory): 
+    slots_(max_connections),
+    factory_(factory)
+    {}
 
 bool ConnectionTable::can_track(int fd) const noexcept {
     return fd >= 0 && static_cast<std::size_t>(fd) < slots_.size();
@@ -28,6 +31,7 @@ bool ConnectionTable::activate(int fd) noexcept {
         return false;
     }
     c->attach(fd);
+    c->set_event_handler(factory_());
     return true;
 }
 
