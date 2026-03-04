@@ -11,6 +11,8 @@ add_library(reactor_core STATIC
     src/connection.cpp
     src/connection_table.cpp
     src/event_loop.cpp
+    src/kvcache/cache.cpp
+    src/kvcache/kv_handler.cpp
     src/reactor.cpp
     src/sys_utils.cpp
 )
@@ -34,4 +36,3 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(reactor PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(tcp_client PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-

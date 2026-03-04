@@ -107,7 +107,7 @@ IoResult Connection::on_readable() noexcept {
     }
 
     while (true) {
-        const ssize_t bytes_received = ::recv(fd_, read_buffer_.data(), read_buffer_.size(), 0);
+        const ssize_t bytes_received = ::recv(fd_, read_buffer_.data() + result.read_bytes, read_buffer_.size(), 0);
         if (bytes_received == 0) {
             result.should_close = true;
             return result;
