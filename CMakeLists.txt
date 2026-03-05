@@ -31,8 +31,14 @@ add_executable(tcp_client
     tcp_client.cpp
 )
 
+add_executable(tester
+    tester.cpp
+)
+target_link_libraries(tester PRIVATE reactor_core)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(reactor_core PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(reactor PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(tcp_client PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(tester PRIVATE -Wall -Wextra -Wpedantic)
 endif()
