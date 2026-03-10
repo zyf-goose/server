@@ -83,16 +83,48 @@ bool Connection::flush_write(IoResult& result) noexcept {
     return true;
 }
 
+std::size_t Connection::pull_handler_output() noexcept {
+    if (handler_ == nullptr) {
+        return 0U;
+    }
+
+    std::size_t appended_total = 0U;
+    const std::size_t capacity = write_buffer_.size();
+    while (write_buffer_size_ != capacity) {
+        const std::size_t tail = (write_buffer_begin_ + write_buffer_size_) % capacity;
+        const std::size_t free_space = capacity - write_buffer_size_;
+        const std::size_t contiguous = std::min(free_space, capacity - tail);
+        const std::size_t appended =
+            handler_->append_output(write_buffer_.data() + tail, contiguous);
+        write_buffer_size_ += appended;
+        appended_total += appended;
+
+        if (appended < contiguous) {
+            break;
+        }
+    }
+
+    return appended_total;
+}
+
 IoResult Connection::on_writable() noexcept {
     IoResult result{};
     if (!active_) {
         return result;
     }
 
-    if (!flush_write(result)) {
-        result.should_close = true;
+    while (true) {
+        if (!flush_write(result)) {
+            result.should_close = true;
+            return result;
+        }
+        if (write_buffer_size_ != 0U) {
+            return result;
+        }
+        if (pull_handler_output() == 0U) {
+            return result;
+        }
     }
-    return result;
 }
 
 IoResult Connection::on_readable() noexcept {
@@ -107,7 +139,7 @@ IoResult Connection::on_readable() noexcept {
     }
 
     while (true) {
-        const ssize_t bytes_received = ::recv(fd_, read_buffer_.data() + result.read_bytes, read_buffer_.size(), 0);
+        const ssize_t bytes_received = ::recv(fd_, read_buffer_.data(), read_buffer_.size(), 0);
         if (bytes_received == 0) {
             result.should_close = true;
             return result;
@@ -124,21 +156,14 @@ IoResult Connection::on_readable() noexcept {
             result.should_close = true;
             return result;
         }
-        result.read_bytes += static_cast<std::size_t>(bytes_received);
+
+        const std::size_t received = static_cast<std::size_t>(bytes_received);
+        result.read_bytes += received;
+        handler_->on_bytes(read_buffer_.data(), received);
+        pull_handler_output();
     }
 
-    // assume handler consumes all bytes in read buffer, and write buffer has no wrap around when appending
-    handler_->on_bytes(read_buffer_.data(), result.read_bytes);
-    const size_t offset = write_buffer_begin_ + write_buffer_size_;
-    write_buffer_size_ += handler_->append_output(write_buffer_.begin() + offset, write_buffer_.size() - offset);
-
     if (write_buffer_size_ > 0) {
-        /*
-        if (!enqueue_write(write_buffer_.data() + write_buffer_begin_, write_buffer_size_)) {
-            result.should_close = true;
-            return result;
-        }
-        */
         if (!flush_write(result)) {
             result.should_close = true;
             return result;

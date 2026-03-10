@@ -34,6 +34,7 @@ public:
 private:
     bool enqueue_write(const char* data, std::size_t len) noexcept;
     bool flush_write(IoResult& result) noexcept;
+    std::size_t pull_handler_output() noexcept;
 
     int fd_ = -1;
     bool active_ = false;

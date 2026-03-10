@@ -2,12 +2,16 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "kvcache/protocol.hpp"
+#include "utils/kv_handler.hpp"
 
 namespace {
 
@@ -77,10 +81,54 @@ bool run_protocol_tests() {
     Protocol protocol;
 
     ok &= expect_eq("proto SET", protocol.process_bytes("SET#pk1#pv1", 11), "ADDED\r\n");
+    ok &= expect_eq("proto SET framed", protocol.process_bytes("SET#pk2#pv2\r\n", 13), "ADDED\r\n");
     ok &= expect_eq("proto GET hit", protocol.process_bytes("GET#pk1", 7), "pv1\r\n");
     ok &= expect_eq("proto EXIST hit", protocol.process_bytes("EXIST#pk1", 9), "FOUND\r\n");
     ok &= expect_eq("proto DEL hit", protocol.process_bytes("DEL#pk1", 7), "DELETED\r\n");
     ok &= expect_eq("proto GET miss", protocol.process_bytes("GET#pk1", 7), "NOT FOUND\r\n");
+    ok &= expect_eq("proto invalid", protocol.process_bytes("BOGUS#pk1", 9), "ERROR\r\n");
+
+    return ok;
+}
+
+std::string drain_handler_output(KvHandler& handler, std::size_t chunk_size) {
+    std::string output;
+    std::array<char, 32> buffer{};
+
+    while (true) {
+        const std::size_t request_size = std::min(chunk_size, buffer.size());
+        const std::size_t copied = handler.append_output(buffer.data(), request_size);
+        if (copied == 0U) {
+            return output;
+        }
+        output.append(buffer.data(), copied);
+    }
+}
+
+bool run_handler_tests() {
+    bool ok = true;
+    Protocol protocol;
+    KvHandler handler(protocol);
+    constexpr std::string_view kSetPrefix = "SET#split";
+    constexpr std::string_view kSetSuffixAndGet = "#value\r\nGET#split\r\n";
+    constexpr std::string_view kCoalesced = "MOD#split#v2\r\nEXIST#split\r\n";
+
+    ok &= expect_true("handler consume partial SET prefix",
+                      handler.on_bytes(kSetPrefix.data(), kSetPrefix.size()) == kSetPrefix.size());
+    ok &= expect_eq("handler no response for incomplete frame", drain_handler_output(handler, 4), "");
+
+    ok &= expect_true("handler consume SET suffix + GET",
+                      handler.on_bytes(kSetSuffixAndGet.data(), kSetSuffixAndGet.size()) ==
+                          kSetSuffixAndGet.size());
+    ok &= expect_eq("handler split read + short writes",
+                    drain_handler_output(handler, 3),
+                    "ADDED\r\nvalue\r\n");
+
+    ok &= expect_true("handler consume coalesced requests",
+                      handler.on_bytes(kCoalesced.data(), kCoalesced.size()) == kCoalesced.size());
+    ok &= expect_eq("handler coalesced frames",
+                    drain_handler_output(handler, 5),
+                    "UPDATED\r\nFOUND\r\n");
 
     return ok;
 }
@@ -154,14 +202,14 @@ bool run_connection_tests() {
     }
 
     bool ok = true;
-    ok &= check_round_trip(sock, "DEL#nk1", "NOT FOUND\r\n", "net DEL warmup");
-    ok &= check_round_trip(sock, "SET#nk1#nv1", "ADDED\r\n", "net SET");
-    ok &= check_round_trip(sock, "GET#nk1", "nv1\r\n", "net GET");
-    ok &= check_round_trip(sock, "MOD#nk1#nv2", "UPDATED\r\n", "net MOD");
-    ok &= check_round_trip(sock, "GET#nk1", "nv2\r\n", "net GET updated");
-    ok &= check_round_trip(sock, "EXIST#nk1", "FOUND\r\n", "net EXIST");
-    ok &= check_round_trip(sock, "DEL#nk1", "DELETED\r\n", "net DEL");
-    ok &= check_round_trip(sock, "GET#nk1", "NOT FOUND\r\n", "net GET miss");
+    ok &= check_round_trip(sock, "DEL#nk1\r\n", "NOT FOUND\r\n", "net DEL warmup");
+    ok &= check_round_trip(sock, "SET#nk1#nv1\r\n", "ADDED\r\n", "net SET");
+    ok &= check_round_trip(sock, "GET#nk1\r\n", "nv1\r\n", "net GET");
+    ok &= check_round_trip(sock, "MOD#nk1#nv2\r\n", "UPDATED\r\n", "net MOD");
+    ok &= check_round_trip(sock, "GET#nk1\r\n", "nv2\r\n", "net GET updated");
+    ok &= check_round_trip(sock, "EXIST#nk1\r\n", "FOUND\r\n", "net EXIST");
+    ok &= check_round_trip(sock, "DEL#nk1\r\n", "DELETED\r\n", "net DEL");
+    ok &= check_round_trip(sock, "GET#nk1\r\n", "NOT FOUND\r\n", "net GET miss");
 
     ::close(sock);
     return ok;
@@ -173,6 +221,7 @@ int main() {
     bool ok = true;
     ok &= run_cache_tests();
     ok &= run_protocol_tests();
+    ok &= run_handler_tests();
     ok &= run_connection_tests();
     return ok ? 0 : 1;
 }
