@@ -1,8 +1,8 @@
 # Reactor Server
 
-C++20 epoll-based server used for low-latency systems interview prep.
+C++20 epoll-based server that can run echo traffic and simple KV-cache workloads.
 
-The codebase is intentionally small enough to walk through in an interview, but it still covers the core mechanics of a production-style event-driven server:
+The codebase is compact, but it still covers the core mechanics of a production-style event-driven server:
 
 - edge-triggered `epoll` reactor with explicit connection lifecycle
 - per-connection `EventHandler` abstraction
@@ -65,7 +65,7 @@ GET#alpha\r\n
 
 Responses are ASCII status lines or values terminated by `\r\n`.
 
-## Interview Talking Points
+## Notes
 
 - Why ET `epoll` requires draining `recv`/`send` until `EAGAIN`
 - Why partial reads and writes must be modeled explicitly in the protocol layer
